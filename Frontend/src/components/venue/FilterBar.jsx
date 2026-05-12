@@ -1,13 +1,11 @@
 import Button from '../common/Button.jsx';
 import Input from '../common/Input.jsx';
-import Select from '../common/Select.jsx';
-import { CITIES } from '../../mock/venues.js';
 
 export const DEFAULT_FILTERS = {
   city: '',
   minCapacity: '',
+  maxCapacity: '',
   maxPrice: '',
-  query: '',
 };
 
 export default function FilterBar({
@@ -24,26 +22,14 @@ export default function FilterBar({
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="card-surface p-5"
-    >
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-end">
+    <form onSubmit={handleSubmit} className="card-surface p-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
         <Input
-          label="Search"
-          name="query"
-          value={filters.query}
-          onChange={update('query')}
-          placeholder="Venue name, keyword…"
-          containerClassName="xl:col-span-2"
-        />
-        <Select
           label="City"
           name="city"
           value={filters.city}
           onChange={update('city')}
-          placeholder="All cities"
-          options={CITIES}
+          placeholder="e.g. Manchester"
         />
         <Input
           label="Min capacity"
@@ -53,6 +39,15 @@ export default function FilterBar({
           type="number"
           min="0"
           placeholder="e.g. 50"
+        />
+        <Input
+          label="Max capacity"
+          name="maxCapacity"
+          value={filters.maxCapacity}
+          onChange={update('maxCapacity')}
+          type="number"
+          min="0"
+          placeholder="e.g. 500"
         />
         <Input
           label="Max price / day"

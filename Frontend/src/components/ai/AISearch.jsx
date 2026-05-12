@@ -4,11 +4,7 @@ import Spinner from '../common/Spinner.jsx';
 import AIResultCard from './AIResultCard.jsx';
 import useAISearch from '../../hooks/useAISearch.js';
 
-const EXAMPLE_PROMPTS = [
-  'Modern venue in central London for a 50-person product launch with good AV',
-  'Berlin tech conference space for 400 attendees with breakout rooms and live streaming',
-  'Boutique workshop space in Amsterdam for 20 people, daylight and whiteboards',
-];
+
 
 export default function AISearch() {
   const [prompt, setPrompt] = useState('');
@@ -28,7 +24,7 @@ export default function AISearch() {
               AI
             </span>
             <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              Describe your event — we’ll find the venue
+              Describe your event we’ll find the venue
             </h2>
           </div>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -52,21 +48,6 @@ export default function AISearch() {
           className="input-base resize-none"
           disabled={isLoading}
         />
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500">Try:</span>
-          {EXAMPLE_PROMPTS.map((example) => (
-            <button
-              type="button"
-              key={example}
-              onClick={() => setPrompt(example)}
-              disabled={isLoading}
-              className="text-xs rounded-full border border-slate-200 px-3 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              {example.length > 60 ? `${example.slice(0, 60)}…` : example}
-            </button>
-          ))}
-        </div>
 
         <div className="mt-4 flex items-center justify-between">
           <div className="text-xs text-slate-500 min-h-[20px]">

@@ -5,7 +5,7 @@ import VenueGrid from '../components/venue/VenueGrid.jsx';
 import { useShortlist } from '../context/ShortlistContext.jsx';
 
 export default function Shortlist() {
-  const { shortlist, count, clear } = useShortlist();
+  const { shortlist, count, clear, loading } = useShortlist();
 
   return (
     <div className="space-y-6">
@@ -25,20 +25,22 @@ export default function Shortlist() {
             <Button variant="ghost" onClick={clear}>
               Clear all
             </Button>
-            <Link to="/">
+            <Link to="/dashboard">
               <Button variant="secondary">Browse more</Button>
             </Link>
           </div>
         )}
       </header>
 
-      {count === 0 ? (
+      {loading ? (
+        <VenueGrid loading />
+      ) : count === 0 ? (
         <EmptyState
           icon="♡"
           title="No venues shortlisted yet"
           description="Find venues you love on the main listing and hit the heart icon to save them here."
           action={
-            <Link to="/">
+            <Link to="/dashboard">
               <Button>Explore venues</Button>
             </Link>
           }

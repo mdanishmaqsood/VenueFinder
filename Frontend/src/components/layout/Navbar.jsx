@@ -1,5 +1,8 @@
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useShortlist } from '../../context/ShortlistContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
+import Button from '../common/Button.jsx';
 
 const navLinkClass = ({ isActive }) =>
   [
@@ -11,11 +14,20 @@ const navLinkClass = ({ isActive }) =>
 
 export default function Navbar() {
   const { count } = useShortlist();
+  const { logout } = useAuth();
+  const { info } = useToast();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    info('You have been signed out.');
+    navigate('/', { replace: true });
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-slate-100 dark:bg-slate-950/80 dark:border-slate-800">
       <div className="mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/dashboard" className="flex items-center gap-2">
           <span className="h-8 w-8 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold">
             V
           </span>
@@ -25,7 +37,7 @@ export default function Navbar() {
         </Link>
 
         <nav className="hidden sm:flex items-center gap-1">
-          <NavLink to="/" end className={navLinkClass}>
+          <NavLink to="/dashboard" end className={navLinkClass}>
             Venues
           </NavLink>
           <NavLink to="/shortlist" className={navLinkClass}>
@@ -65,6 +77,15 @@ export default function Navbar() {
               <p className="text-xs text-slate-500">Acme Events</p>
             </div>
           </div>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleLogout}
+            aria-label="Log out"
+          >
+            Logout
+          </Button>
         </div>
       </div>
     </header>

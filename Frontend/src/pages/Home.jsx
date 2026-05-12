@@ -4,30 +4,33 @@ import FilterBar, { DEFAULT_FILTERS } from '../components/venue/FilterBar.jsx';
 import VenueGrid from '../components/venue/VenueGrid.jsx';
 import Sidebar from '../components/layout/Sidebar.jsx';
 import Button from '../components/common/Button.jsx';
-import useDebounce from '../hooks/useDebounce.js';
 import { getVenues } from '../services/api.js';
+import { useToast } from '../context/ToastContext.jsx';
 
 export default function Home() {
+  const { error: toastError } = useToast();
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Debounced free-text query gives an instant-feeling search without
-  // hammering the API on every keystroke.
-  const debouncedQuery = useDebounce(filters.query, 350);
-
-  const effectiveFilters = {
-    ...appliedFilters,
-    query: debouncedQuery,
-  };
-
+  // Only re-fetch when appliedFilters changes (i.e. user clicks Search/Reset)
+  // or on first mount. Editing inputs no longer hits the API.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getVenues(effectiveFilters)
+    getVenues(appliedFilters)
       .then((data) => {
         if (!cancelled) setVenues(data.venues);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setVenues([]);
+        const msg =
+          err?.response?.data?.detail ||
+          err?.message ||
+          'Failed to load venues.';
+        toastError(msg);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -35,8 +38,9 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
+    // toastError omitted intentionally — would re-fire on every toast
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedFilters.city, appliedFilters.minCapacity, appliedFilters.maxPrice, debouncedQuery]);
+  }, [appliedFilters]);
 
   const handleSubmit = useCallback((next) => setAppliedFilters(next), []);
   const handleReset = useCallback(() => {

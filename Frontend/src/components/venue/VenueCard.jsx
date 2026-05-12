@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import Badge from '../common/Badge.jsx';
 import Button from '../common/Button.jsx';
 import { useShortlist } from '../../context/ShortlistContext.jsx';
@@ -6,14 +7,36 @@ import { formatCapacity, formatPrice } from '../../utils/format.js';
 const MAX_VISIBLE_AMENITIES = 4;
 
 export default function VenueCard({ venue, highlight }) {
-  const { isShortlisted, toggle } = useShortlist();
+  const navigate = useNavigate();
+  const { isShortlisted, isPending, toggle } = useShortlist();
   const shortlisted = isShortlisted(venue.id);
+  const pending = isPending?.(venue.id);
 
   const visibleAmenities = venue.amenities?.slice(0, MAX_VISIBLE_AMENITIES) || [];
   const extraCount = (venue.amenities?.length || 0) - visibleAmenities.length;
 
+  const goToDetail = () => navigate(`/venues/${venue.id}`);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      goToDetail();
+    }
+  };
+
+  const stop = (fn) => (e) => {
+    e.stopPropagation();
+    fn?.(e);
+  };
+
   return (
-    <article className="card-surface group overflow-hidden flex flex-col">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={goToDetail}
+      onKeyDown={handleKeyDown}
+      className="card-surface group overflow-hidden flex flex-col cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+    >
       <div className="relative">
         <img
           src={venue.image}
@@ -23,11 +46,13 @@ export default function VenueCard({ venue, highlight }) {
         />
         <button
           type="button"
-          onClick={() => toggle(venue)}
+          onClick={stop(() => toggle(venue))}
+          disabled={pending}
           aria-pressed={shortlisted}
+          aria-busy={pending}
           aria-label={shortlisted ? 'Remove from shortlist' : 'Add to shortlist'}
           className={[
-            'absolute top-3 right-3 h-9 w-9 rounded-full flex items-center justify-center backdrop-blur transition',
+            'absolute top-3 right-3 h-9 w-9 rounded-full flex items-center justify-center backdrop-blur transition disabled:opacity-60',
             shortlisted
               ? 'bg-red-500 text-white shadow-soft'
               : 'bg-white/90 text-slate-500 hover:text-red-500',
@@ -78,9 +103,10 @@ export default function VenueCard({ venue, highlight }) {
           <Button
             size="sm"
             variant={shortlisted ? 'secondary' : 'primary'}
-            onClick={() => toggle(venue)}
+            disabled={pending}
+            onClick={stop(() => toggle(venue))}
           >
-            {shortlisted ? 'Shortlisted' : 'Shortlist'}
+            {pending ? 'Saving…' : shortlisted ? 'Shortlisted' : 'Shortlist'}
           </Button>
         </div>
       </div>

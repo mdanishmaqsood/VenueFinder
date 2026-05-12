@@ -1,123 +1,202 @@
-// Production-shaped API layer. The backend is not built yet, so each method
-// resolves with mocked data after a small delay. Replacing a method with a
-// real axios call should be a one-line change.
+// Central API layer. All HTTP calls live here so screens stay clean.
+// Real endpoints use `apiClient` (configured with VITE_API_BASE_URL).
+// AI search is still mocked while its backend is being built.
 
 import axios from 'axios';
-import { venues as MOCK_VENUES } from '../mock/venues.js';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
-const USE_MOCKS = true;
+const TOKEN_STORAGE_KEY = 'vf_auth_token';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { Accept: 'application/json' },
 });
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Token ${token}`;
+  }
+  return config;
+});
 
-function filterVenues(list, params = {}) {
-  const { city, minCapacity, maxPrice, query } = params;
-  return list.filter((venue) => {
-    if (city && venue.city !== city) return false;
-    if (minCapacity && venue.capacity < Number(minCapacity)) return false;
-    if (maxPrice && venue.price_per_day > Number(maxPrice)) return false;
-    if (query) {
-      const needle = query.toLowerCase().trim();
-      const haystack = `${venue.name} ${venue.city} ${venue.description} ${venue.amenities.join(' ')}`.toLowerCase();
-      if (!haystack.includes(needle)) return false;
+// On expired/invalid token the backend returns 401 or 404. Clear the token
+// and bounce the user to the login screen.
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const url = error?.config?.url || '';
+    const isAuthEndpoint = url.includes('/auth/');
+    const hadToken = Boolean(localStorage.getItem(TOKEN_STORAGE_KEY));
+
+    if (!isAuthEndpoint && hadToken && (status === 401 || status === 404)) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      sessionStorage.setItem('vf_session_expired', '1');
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.replace('/');
+      }
     }
-    return true;
+
+    return Promise.reject(error);
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+export async function login({ username, password }) {
+  const body = new URLSearchParams();
+  body.append('username', username);
+  body.append('password', password);
+
+  const { data } = await apiClient.post('/api/auth/token/', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
+  return data; // { token: '...' }
+}
+
+export function saveToken(token) {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// Venues
+// ---------------------------------------------------------------------------
+
+function normalizeVenue(raw) {
+  if (!raw) return raw;
+  return {
+    ...raw,
+    price_per_day:
+      raw.price_per_day != null ? Number(raw.price_per_day) : null,
+    amenities: Array.isArray(raw.amenities) ? raw.amenities : [],
+    image: raw.image_url || raw.image,
+  };
 }
 
 export async function getVenues(params = {}) {
-  if (!USE_MOCKS) {
-    const { data } = await apiClient.get('/venues', { params });
-    return data;
-  }
-  await delay(450);
-  return { venues: filterVenues(MOCK_VENUES, params) };
+  const query = {};
+  if (params.city) query.city = params.city;
+  if (params.minCapacity) query.min_capacity = Number(params.minCapacity);
+  if (params.maxCapacity) query.max_capacity = Number(params.maxCapacity);
+  if (params.maxPrice) query.max_price = Number(params.maxPrice);
+
+  const { data } = await apiClient.get('/api/venues/', { params: query });
+  const list = Array.isArray(data?.results) ? data.results : [];
+  return {
+    venues: list.map(normalizeVenue),
+    count: data?.count ?? list.length,
+    next: data?.next ?? null,
+    previous: data?.previous ?? null,
+  };
 }
 
-// AI search: POST returns a job_id. Caller then polls getSearchResults until status === 'completed'.
-const aiJobs = new Map();
+export async function getVenueById(id) {
+  const { data } = await apiClient.get(`/api/venues/${id}/`);
+  return normalizeVenue(data);
+}
+
+// ---------------------------------------------------------------------------
+// AI search
+// ---------------------------------------------------------------------------
 
 export async function aiSearch({ prompt }) {
-  if (!USE_MOCKS) {
-    const { data } = await apiClient.post('/ai/search', { prompt });
-    return data;
-  }
-  await delay(350);
-  const job_id = `job_${Math.random().toString(36).slice(2, 9)}`;
-  const startedAt = Date.now();
-  const completeAfterMs = 5200 + Math.random() * 1800;
-  aiJobs.set(job_id, { prompt, startedAt, completeAfterMs });
-  return { job_id };
+  const { data } = await apiClient.post(
+    '/api/venues/search/',
+    { query: prompt },
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  return data; // { job_id }
 }
 
-function buildAIRecommendations(prompt) {
-  const lower = prompt.toLowerCase();
-  // Naive keyword matching to produce realistic-looking recommendations.
-  const scored = MOCK_VENUES.map((v) => {
-    let score = 0;
-    if (lower.includes(v.city.toLowerCase())) score += 4;
-    v.amenities.forEach((a) => {
-      if (lower.includes(a.toLowerCase())) score += 2;
-    });
-    const capMatch = lower.match(/(\d{2,4})[\s-]*(?:person|people|guests|pax|attendees)/);
-    if (capMatch) {
-      const wanted = Number(capMatch[1]);
-      if (v.capacity >= wanted && v.capacity <= wanted * 2.2) score += 3;
-    }
-    if (lower.includes('modern') && /modern|loft|studio|pavilion|tech/i.test(v.description)) score += 1;
-    if (lower.includes('central') && /Mitte|Soho|Marais|Midtown|SoMa|Shoreditch/i.test(v.name)) score += 2;
-    return { venue: v, score };
-  });
-  const top = scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4)
-    .map((s) => s.venue);
-  return top.length ? top : MOCK_VENUES.slice(0, 4);
+function mapAIStatus(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (s === 'success' || s === 'complete' || s === 'completed') return 'completed';
+  if (s === 'failure' || s === 'error' || s === 'failed') return 'error';
+  return 'pending';
 }
 
 export async function getSearchResults(job_id) {
-  if (!USE_MOCKS) {
-    const { data } = await apiClient.get(`/ai/search/${job_id}`);
-    return data;
+  const { data } = await apiClient.get(`/api/venues/search/${job_id}/`);
+  const status = mapAIStatus(data?.status);
+
+  if (status !== 'completed') {
+    return {
+      status,
+      error: status === 'error' ? data?.error || data?.detail || 'AI search failed.' : undefined,
+    };
   }
-  const job = aiJobs.get(job_id);
-  if (!job) {
-    return { status: 'error', error: 'Unknown job_id' };
-  }
-  const elapsed = Date.now() - job.startedAt;
-  if (elapsed < job.completeAfterMs) {
-    return { status: 'pending', progress: Math.min(0.95, elapsed / job.completeAfterMs) };
-  }
-  const venues = buildAIRecommendations(job.prompt);
+
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const venues = results
+    .map((item) => {
+      const v = item?.venue ? normalizeVenue(item.venue) : null;
+      if (!v) return null;
+      return { ...v, aiExplanation: item.explanation || '' };
+    })
+    .filter(Boolean);
+
   return {
     status: 'completed',
-    explanation: `Based on your brief, here are ${venues.length} venues that closely match your capacity, location and amenity needs. They were ranked by fit to your prompt: “${job.prompt.trim()}”.`,
+    explanation:
+      data?.explanation ||
+      `Found ${venues.length} venue${venues.length === 1 ? '' : 's'} matching your brief.`,
     venues,
   };
 }
 
-// Shortlist methods kept here so the UI can later swap to a real backend
-// without touching the context layer. The local context remains the source of
-// truth in this mock build.
-export async function toggleShortlist({ venueId, shortlisted }) {
-  if (!USE_MOCKS) {
-    const { data } = await apiClient.post('/shortlist/toggle', { venueId, shortlisted });
-    return data;
-  }
-  await delay(120);
-  return { venueId, shortlisted };
+// ---------------------------------------------------------------------------
+// Shortlist
+// ---------------------------------------------------------------------------
+
+export async function getShortlist() {
+  const { data } = await apiClient.get('/api/shortlist/');
+  const list = Array.isArray(data) ? data : data?.results || [];
+  // Each item is { id, venue: {...}, created_at }. Flatten to venue + entryId.
+  return list
+    .map((item) => {
+      if (!item?.venue) return null;
+      return {
+        ...normalizeVenue(item.venue),
+        shortlistEntryId: item.id,
+        shortlistedAt: item.created_at,
+      };
+    })
+    .filter(Boolean);
+}
+
+export async function addToShortlist(venueId) {
+  const { data } = await apiClient.post(`/api/venues/${venueId}/shortlist/`);
+  return data; // { detail, id }
+}
+
+export async function removeFromShortlist(venueId) {
+  const { data } = await apiClient.delete(`/api/venues/${venueId}/shortlist/`);
+  return data;
 }
 
 export default {
+  login,
+  saveToken,
+  getToken,
+  clearToken,
   getVenues,
+  getVenueById,
   aiSearch,
   getSearchResults,
-  toggleShortlist,
+  getShortlist,
+  addToShortlist,
+  removeFromShortlist,
 };
