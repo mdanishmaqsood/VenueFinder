@@ -1,0 +1,100 @@
+version: "3.9"
+
+# ── Shared DB credentials (change once, applies everywhere) ─────────────────
+x-db-creds: &db-creds
+  POSTGRES_DB: venuefinder
+  POSTGRES_USER: venuefinder
+  POSTGRES_PASSWORD: venuefinder
+
+x-app-env: &app-env
+  env_file: ./Backend/.env
+  environment:
+    DB_HOST: db
+    DB_PORT: "5432"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    DATABASE_URL: postgres://venuefinder:venuefinder@db:5432/venuefinder
+
+services:
+  # ── PostgreSQL with pgvector ─────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg15
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      <<: *db-creds
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U venuefinder"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Django / Gunicorn ────────────────────────────────────────────────────
+  web:
+    build: ./Backend
+    restart: unless-stopped
+    <<: *app-env
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_data:/app/mediafiles
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120
+
+  # ── Celery worker ────────────────────────────────────────────────────────
+  celery:
+    build: ./Backend
+    restart: unless-stopped
+    <<: *app-env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      DATABASE_URL: postgres://venuefinder:venuefinder@db:5432/venuefinder
+      SKIP_MIGRATIONS: "1"
+    volumes:
+      - media_data:/app/mediafiles
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A core worker -l info --concurrency 4
+
+  # ── React / Vite dev server ──────────────────────────────────────────────
+  frontend:
+    build: ./Frontend
+    restart: unless-stopped
+    env_file: ./Frontend/.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - web
+    volumes:
+      - ./Frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  frontend_node_modules:
